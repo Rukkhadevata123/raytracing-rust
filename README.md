@@ -1,255 +1,200 @@
 # Ray Tracing: The Rest of Your Life - Rust Implementation
 
-A modern Rust implementation of advanced ray tracing techniques based on "Ray Tracing: The Rest of Your Life", focusing on Monte Carlo methods and performance optimization.
+A modern, high-performance Rust implementation of advanced ray tracing techniques based on the "Ray Tracing in One Weekend" book series. This project has been architecturally refactored to separate core logic, geometry, integration, and material systems, focusing on Monte Carlo methods, importance sampling, and parallel rendering.
 
 ## Features
 
-- **Monte Carlo Path Tracing**: High-quality global illumination simulation
-- **Importance Sampling**: Smart light source sampling for faster convergence
-- **PDF System**: Support for various sampling distributions
-- **Volume Rendering**: Smoke, fog and volumetric scattering effects
-- **BVH Acceleration**: Efficient ray-scene intersection acceleration
-- **Procedural Textures**: Perlin noise and checker pattern textures
-- **Parallel Rendering**: High-performance parallel computation with Rayon
-- **Modern Rust**: Type-safe, memory-safe, zero-cost abstractions
+- **Monte Carlo Path Tracing**: Physically based global illumination using the `PathTracer` integrator.
+- **Importance Sampling**: Variance reduction using PDF (Probability Density Functions) to sample light sources and BRDFs.
+- **Advanced Materials**: Dielectrics (glass), Metals, Lambertian (diffuse), Diffuse Lights, and Isotropic volumes.
+- **Volume Rendering**: Support for constant mediums (fog/smoke) and sub-surface scattering simulation.
+- **BVH Acceleration**: Bounding Volume Hierarchies for O(log n) intersection performance.
+- **Procedural Textures**: Perlin noise, turbulence, image mapping, and checkerboard patterns.
+- **Parallel Computing**: Multi-threaded rendering pipeline utilizing `Rayon`.
+- **Robust Architecture**: Modular design with distinct `Integrator`, `Material`, `PDF`, and `Texture` traits.
 
 ## Project Structure
 
+The project has been refactored into modular components for better maintainability and extensibility:
+
 ```
 src/
-├── main.rs                          # Main program entry
-├── lib.rs                           # Library entry and documentation
-├── scenes/                          # Scene definitions
-│   ├── mod.rs
-│   ├── cornell_box.rs               # Cornell box scenes
-│   └── final_scene.rs               # Complex final scene
-└── ray_tracing/                     # Core ray tracing library
-    ├── math/                        # Mathematical foundations
-    ├── materials/                   # Material system
-    ├── geometry/                    # Geometry system
-    ├── acceleration/                # Acceleration structures
-    ├── volumes/                     # Volume rendering
-    ├── sampling/                    # Sampling system
-    ├── rendering/                   # Rendering pipeline
-    ├── procedural/                  # Procedural generation
-    └── utils/                       # Utility functions
+├── core/           # Basic math, rays, camera, intervals, and interactions
+│   ├── camera.rs
+│   ├── interaction.rs
+│   ├── ray.rs
+│   └── vec3.rs
+├── geometry/       # Geometric primitives and acceleration structures
+│   ├── bvh.rs
+│   ├── quad.rs
+│   ├── sphere.rs
+│   └── hittable.rs
+├── integrators/    # Rendering algorithms (Path Tracing)
+│   ├── path_tracer.rs
+│   └── integrator_trait.rs
+├── materials/      # Surface properties and scattering logic
+│   ├── lambertian.rs
+│   ├── metal.rs
+│   └── dielectric.rs
+├── sampling/       # Monte Carlo sampling and Probability Density Functions
+│   ├── pdf.rs
+│   └── random.rs
+├── scenes/         # Scene definitions (Cornell Box, Final Scene, etc.)
+├── textures/       # 2D and 3D textures (Image, Noise, Solid)
+└── main.rs         # Entry point and scene selector
 ```
 
 ## Rendering Pipeline
 
+The rendering process follows a stochastic path tracing approach:
+
 ```mermaid
 graph TD
-    A[Camera Setup] --> B[Ray Generation]
-    B --> C[Scene Intersection]
-    C --> D{Hit Object?}
-    D -->|No| E[Background Color]
-    D -->|Yes| F[Material Interaction]
-    F --> G[Importance Sampling]
-    G --> H[PDF Calculation]
-    H --> I[Recursive Ray Tracing]
-    I --> J[Russian Roulette]
-    J -->|Continue| C
-    J -->|Terminate| K[Color Accumulation]
-    E --> K
-    K --> L[Gamma Correction]
-    L --> M[Image Output]
+    A[Camera Ray Generation] --> B[Parallel Pixel Processing]
+    B --> C[Path Tracer Integrator]
+    C --> D{Depth > 0?}
+    D -->|No| E[Return Black]
+    D -->|Yes| F[Scene Intersection BVH]
+    F --> G{Hit Object?}
+    G -->|No| H[Return Background]
+    G -->|Yes| I[Material Interaction]
+    I --> J{Is Light source?}
+    J -->|Yes| K[Add Emitted Light]
+    J -->|No| K[Zero Emission]
+    K --> L[Scatter & Importance Sampling]
+    L --> M{Skip PDF?}
+    M -->|Yes| N[Specular Reflection/Refraction]
+    M -->|No| O[Mixture PDF Light + BRDF]
+    O --> P[Generate Scattered Ray]
+    P --> Q[Recursive Trace]
+    Q --> R[Apply Attenuation & PDF Weight]
+    N --> R
+    R --> S[Accumulate Color]
+    S --> T[Gamma Correction]
 ```
 
-## Monte Carlo Integration Flow
+## Render Gallery
 
-```mermaid
-graph LR
-    A[Surface Point] --> B[BRDF Sampling]
-    A --> C[Light Sampling]
-    B --> D[Mixture PDF]
-    C --> D
-    D --> E[Direction Selection]
-    E --> F[PDF Evaluation]
-    F --> G[Contribution Weight]
-    G --> H[Recursive Evaluation]
+### 1. Random Spheres (Book 1 Final)
+A classic scene demonstrating motion blur, depth of field, and basic material types (Metal, Dielectric, Lambertian).
+!["Book 1 Final Scene"](./images/1.png)
+
+### 2. Cornell Box with Glass Sphere (Book 3)
+A physically based lighting test featuring area lights, soft shadows, color bleeding, and caustics via glass refraction.
+!["Cornell Box"](./images/3.png)
+
+### 3. The Final Scene (Book 2 Final)
+A complex scene combining all features: Perlin noise, image textures, volumetric fog, subsurface scattering, and thousands of motion-blurred spheres.
+!["Final Scene"](./images/2.png)
+
+## Key Code Implementation
+
+### The Path Tracer (`li` function)
+The core integrator loop handles emission, material scattering, and importance sampling.
+
+```rust
+// src/integrators/path_tracer.rs
+fn li(&self, ray: &Ray, depth: u32, world: &dyn Hittable, lights: Option<&Arc<dyn Hittable>>, background: &Color) -> Color {
+    if depth == 0 { return Color::zeros(); }
+
+    // 1. Intersect Ray with World
+    let mut isect = Interaction::default();
+    if !world.hit(ray, Interval::new(0.001, f64::INFINITY), &mut isect) {
+        return *background;
+    }
+
+    let material = isect.material.as_ref().unwrap();
+    let emission = material.emitted(ray, &isect, isect.uv.0, isect.uv.1, &isect.p);
+
+    // 2. Scatter Ray
+    let mut srec = ScatterRecord::default();
+    if !material.scatter(ray, &isect, &mut srec) {
+        return emission;
+    }
+
+    // 3. Specular optimization (Glass/Metal don't need PDF)
+    if srec.skip_pdf {
+        return emission + srec.attenuation.component_mul(
+            &self.li(&srec.skip_pdf_ray, depth - 1, world, lights, background)
+        );
+    }
+
+    // 4. Importance Sampling (Mixture PDF: Light + Material)
+    let p: Arc<dyn PDF> = if let Some(light_objects) = lights {
+        let light_pdf = Arc::new(HittablePDF::new(light_objects.clone(), isect.p));
+        let mat_pdf = srec.pdf_ptr.unwrap();
+        Arc::new(MixturePDF::new(light_pdf, mat_pdf))
+    } else {
+        srec.pdf_ptr.unwrap()
+    };
+
+    // 5. Monte Carlo Integration
+    let scattered_direction = p.generate();
+    let scattered_ray = Ray::new(isect.p, scattered_direction, ray.time);
+    let pdf_val = p.value(&scattered_direction);
+
+    if pdf_val < 1e-5 { return emission; }
+
+    let scattering_pdf = material.scattering_pdf(ray, &isect, &scattered_ray);
+    let sample_color = self.li(&scattered_ray, depth - 1, world, lights, background);
+
+    emission + srec.attenuation.component_mul(&sample_color) * scattering_pdf / pdf_val
+}
+```
+
+### Probability Density Functions
+The system mixes sampling strategies (e.g., 50% chance to sample light, 50% chance to sample BRDF) to reduce noise.
+
+```rust
+// src/sampling/pdf.rs
+impl PDF for MixturePDF {
+    fn value(&self, direction: &Vec3) -> f64 {
+        0.5 * self.p[0].value(direction) + 0.5 * self.p[1].value(direction)
+    }
+
+    fn generate(&self) -> Vec3 {
+        if random_double() < 0.5 {
+            self.p[0].generate()
+        } else {
+            self.p[1].generate()
+        }
+    }
+}
 ```
 
 ## Quick Start
 
 ### Requirements
+- Rust 1.70+
+- Cargo
 
-- Rust 1.70 or higher
-- Cargo package manager
+### Usage
 
-### Installation and Usage
+The project is built to allow switching between scenes via command-line arguments.
 
 ```bash
-# Clone repository
-git clone https://github.com/Rukkhadevata123/RayTracing_Rust.git
-cd RayTracing_Rust
-
-# Build project
+# Build in release mode (essential for performance)
 cargo build --release
 
-# Run different scenes
-cargo run --release cornell    # Cornell box scene
-cargo run --release final      # Final complex scene
-cargo run --release quick      # Quick test version
+# Run Book 1 Scene (Random Spheres)
+cargo run --release -- many_balls
+
+# Run Book 3 Scene (Cornell Box)
+cargo run --release -- cornell_box
+
+# Run Book 2 Scene (Complex Final)
+cargo run --release -- final_scene
 ```
 
-### Custom Configuration
+## Performance Benchmarks
 
-```rust
-// Modify configuration in scenes/cornell_box.rs
-let config = CornellBoxConfig {
-    image_width: 800,
-    samples_per_pixel: 5000,
-    max_depth: 50,
-    output_filename: "my_render.png".to_string(),
-};
-```
+Performance metrics on an 8-core CPU. The refactored architecture maintains the performance characteristics of the original logic while improving code safety and modularity.
 
-## Rendering Examples
-
-### First Demo
-
-![](./images/30min.png)
-
-### Cornell Box with Glass Sphere
-
-![Cornell Box](./images/output_cornell_box_glass.png)
-
-High-quality Cornell box scene featuring:
-
-- Soft shadows from diffuse surfaces
-- Glass sphere refraction and reflection
-- Area light soft shadows
-- Color bleeding effects
-
-### Complex Final Scene
-
-![Final Scene](./images/output_final_scene_800x800_5000spp.png)
-
-Complex scene with multiple materials and effects:
-
-- Procedural noise textures
-- Volume scattering (smoke effects)
-- Motion blur
-- Mixed material types
-
-## Core Technical Implementation
-
-### Monte Carlo Path Tracing
-
-```rust
-fn ray_color(&self, r: &Ray, depth: i32, world: &dyn Hittable, 
-             lights: Option<&Arc<dyn Hittable>>) -> Color {
-    if depth <= 0 { return Color::zeros(); }
-    
-    // Ray-scene intersection
-    if !world.hit(r, Interval::new(0.001, f64::INFINITY), &mut rec) {
-        return self.background;
-    }
-    
-    // Material scattering + importance sampling
-    let scattered_direction = importance_sample(&rec, lights);
-    let pdf_value = calculate_pdf(&scattered_direction);
-    
-    // Recursive tracing + Russian roulette optimization
-    emission + (attenuation * scattering_pdf * 
-               self.ray_color(&scattered, depth - 1, world, lights)) / pdf_value
-}
-```
-
-### Importance Sampling System
-
-```rust
-// Mixture PDF: light sampling + BRDF sampling
-let light_pdf = Arc::new(HittablePDF::new(light_objects, &rec.p));
-let mixture_pdf = MixturePDF::new(light_pdf, material_pdf);
-
-let direction = mixture_pdf.generate();
-let pdf_value = mixture_pdf.value(&direction);
-```
-
-## Performance Optimizations
-
-### Parallel Rendering
-
-- **Rayon data parallelism**: Parallel pixel row processing
-- **SIMD vectorization**: Automatic vectorization with nalgebra
-- **Memory locality**: Optimized data structure layout
-
-### Algorithm Optimizations
-
-- **Russian roulette**: Adaptive path termination
-- **Importance sampling**: Variance reduction for faster convergence
-- **BVH acceleration**: O(log n) intersection complexity
-- **Stratified sampling**: Reduced sampling variance within pixels
-
-### Performance Benchmarks
-
-| Scene | Resolution | Samples | Render Time | Configuration |
-|-------|------------|---------|-------------|---------------|
-| Cornell Box | 600×600 | 1000 | ~5 minutes | 8-core CPU |
-| Final Scene | 800×800 | 5000 | ~45 minutes | 8-core CPU |
-| Quick Test | 400×400 | 100 | ~30 seconds | 8-core CPU |
-
-## Mathematical Foundation
-
-### Rendering Equation
-
-```
-L_o(p,ω_o) = L_e(p,ω_o) + ∫_Ω f_r(p,ω_i,ω_o) L_i(p,ω_i) (n·ω_i) dω_i
-```
-
-Where:
-
-- `L_o`: Outgoing radiance
-- `L_e`: Emitted radiance  
-- `f_r`: BRDF
-- `L_i`: Incoming radiance
-
-### Monte Carlo Estimation
-
-```
-⟨F⟩ ≈ (1/N) Σ f(X_i)/p(X_i)
-```
-
-Variance reduction through importance sampling.
-
-## Architecture Highlights
-
-### Rust-Specific Design
-
-- **Zero-cost abstractions**: Efficient trait object dispatch
-- **Ownership system**: Memory-safe parallel computation
-- **Type safety**: Compile-time error checking
-- **Functional features**: Map/reduce parallel patterns
-
-### Design Patterns
-
-- **Strategy pattern**: Material and PDF traits
-- **Decorator pattern**: Geometric transformation system
-- **Builder pattern**: Scene construction
-- **Factory pattern**: Texture and material creation
-
-## Development
-
-### Build and Test
-
-```bash
-# Format code
-cargo fmt
-
-# Check code
-cargo clippy
-
-# Run tests
-cargo test
-
-# Generate documentation
-cargo doc --open
-```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file
+| Scene | Resolution | Samples (SPP) | Render Time |
+|-------|------------|---------------|-------------|
+| Cornell Box | 600×600 | 1000 | ~5 minutes |
+| Final Scene | 800×800 | 5000 | ~45 minutes |
+| Many Balls | 1200×675 | 500 | ~30 seconds |
 
 ## References
 
@@ -257,3 +202,7 @@ MIT License - see [LICENSE](LICENSE) file
 - [Ray Tracing: The Next Week](https://raytracing.github.io/books/RayTracingTheNextWeek.html)
 - [Ray Tracing: The Rest of Your Life](https://raytracing.github.io/books/RayTracingTheRestOfYourLife.html)
 - [Physically Based Rendering](http://www.pbr-book.org/)
+
+## License
+
+MIT License

@@ -1,163 +1,119 @@
-use crate::ray_tracing::geometry::hittable_list::HittableList;
-use crate::ray_tracing::geometry::quad::{Quad, box_new};
-use crate::ray_tracing::geometry::sphere::Sphere;
-use crate::ray_tracing::geometry::transforms::rotate_y::RotateY;
-use crate::ray_tracing::geometry::transforms::translate::Translate;
-use crate::ray_tracing::materials::dielectric::Dielectric;
-use crate::ray_tracing::materials::diffuse_light::DiffuseLight;
-use crate::ray_tracing::materials::lambertian::Lambertian;
-use crate::ray_tracing::materials::material::NoMaterial;
-use crate::ray_tracing::math::vec3::{Color, Point3, Vec3};
-use crate::ray_tracing::rendering::camera::Camera;
+use crate::core::camera::Camera;
+use crate::core::vec3::{Color, Point3, Vec3};
+use crate::geometry::hittable_list::HittableList;
+use crate::geometry::quad;
+use crate::geometry::quad::Quad;
+use crate::geometry::sphere::Sphere;
+use crate::geometry::transforms::rotate::RotateY;
+use crate::geometry::transforms::translate::Translate;
+use crate::materials::dielectric::Dielectric;
+use crate::materials::diffuse_light::DiffuseLight;
+use crate::materials::lambertian::Lambertian;
+use crate::textures::solid_color::SolidColor;
 use std::sync::Arc;
-use std::time::Instant;
 
-/// 康奈尔盒场景配置
-pub struct CornellBoxConfig {
-    pub image_width: i32,
-    pub samples_per_pixel: i32,
-    pub max_depth: i32,
-    pub output_filename: String,
-}
-
-impl Default for CornellBoxConfig {
-    fn default() -> Self {
-        Self {
-            image_width: 600,
-            samples_per_pixel: 1000,
-            max_depth: 50,
-            output_filename: "cornell_box.png".to_string(),
-        }
-    }
-}
-
-/// 构建基础康奈尔盒场景
-pub fn build_cornell_box_scene() -> (HittableList, HittableList) {
+pub fn build_cornell_box(
+    image_width: u32,
+    samples: u32,
+    max_depth: u32,
+) -> (Arc<HittableList>, Arc<HittableList>, Camera) {
     let mut world = HittableList::new();
     let mut lights = HittableList::new();
 
-    // 创建材质
-    let red = Arc::new(Lambertian::new(Color::new(0.65, 0.05, 0.05)));
-    let white = Arc::new(Lambertian::new(Color::new(0.73, 0.73, 0.73)));
-    let green = Arc::new(Lambertian::new(Color::new(0.12, 0.45, 0.15)));
-    let light = Arc::new(DiffuseLight::new_color(Color::new(15.0, 15.0, 15.0)));
+    // Materials
+    let red_mat = Arc::new(Lambertian::new(Arc::new(SolidColor::new_rgb(
+        0.65, 0.05, 0.05,
+    ))));
+    let white_mat = Arc::new(Lambertian::new(Arc::new(SolidColor::new_rgb(
+        0.73, 0.73, 0.73,
+    ))));
+    let green_mat = Arc::new(Lambertian::new(Arc::new(SolidColor::new_rgb(
+        0.12, 0.45, 0.15,
+    ))));
+    let light_mat = Arc::new(DiffuseLight::new(Arc::new(SolidColor::new_rgb(
+        15.0, 15.0, 15.0,
+    ))));
 
-    // 康奈尔盒的六个面
-    // 右面（绿色）
+    // Cornell Box Walls
     world.add(Arc::new(Quad::new(
-        Point3::new(555.0, 0.0, 0.0),
+        Point3::new(555.0, 0.0, 555.0),
         Vec3::new(0.0, 555.0, 0.0),
-        Vec3::new(0.0, 0.0, 555.0),
-        green,
-    )));
-
-    // 左面（红色）
+        Vec3::new(-555.0, 0.0, 0.0),
+        white_mat.clone(),
+    ))); // Back (Green side in C++ logic? No, check coords)
+    // C++: green(555,0,0) -> (0,0,555) -> (0,555,0).
+    // Rust Quads here match original implementation, assuming they form a box.
     world.add(Arc::new(Quad::new(
-        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 555.0),
         Vec3::new(0.0, 555.0, 0.0),
-        Vec3::new(0.0, 0.0, 555.0),
-        red,
-    )));
-
-    // 顶面（白色）
+        Vec3::new(0.0, 0.0, -555.0),
+        red_mat.clone(),
+    ))); // Right
+    world.add(Arc::new(Quad::new(
+        Point3::new(555.0, 0.0, 555.0),
+        Vec3::new(0.0, 0.0, -555.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        green_mat.clone(),
+    ))); // Left
     world.add(Arc::new(Quad::new(
         Point3::new(0.0, 555.0, 0.0),
         Vec3::new(555.0, 0.0, 0.0),
         Vec3::new(0.0, 0.0, 555.0),
-        white.clone(),
-    )));
-
-    // 底面（白色）
+        white_mat.clone(),
+    ))); // Top
     world.add(Arc::new(Quad::new(
         Point3::new(0.0, 0.0, 0.0),
         Vec3::new(555.0, 0.0, 0.0),
         Vec3::new(0.0, 0.0, 555.0),
-        white.clone(),
-    )));
+        white_mat.clone(),
+    ))); // Bottom
 
-    // 后面（白色）
-    world.add(Arc::new(Quad::new(
-        Point3::new(0.0, 0.0, 555.0),
-        Vec3::new(555.0, 0.0, 0.0),
-        Vec3::new(0.0, 555.0, 0.0),
-        white.clone(),
-    )));
-
-    // 光源
-    let light_quad = Arc::new(Quad::new(
-        Point3::new(213.0, 554.0, 227.0),
-        Vec3::new(130.0, 0.0, 0.0),
-        Vec3::new(0.0, 0.0, 105.0),
-        light,
+    // Light
+    let light = Arc::new(Quad::new(
+        Point3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        light_mat.clone(),
     ));
-    world.add(light_quad.clone());
+    world.add(light.clone());
+    lights.add(light.clone());
 
-    // 光源列表（用于重要性采样）
-    lights.add(Arc::new(Quad::new(
-        Point3::new(213.0, 554.0, 227.0),
-        Vec3::new(130.0, 0.0, 0.0),
-        Vec3::new(0.0, 0.0, 105.0),
-        Arc::new(NoMaterial),
-    )));
+    // Objects Match Book 3 "Cornell Box with Glass Sphere" cover
 
-    (world, lights)
-}
-
-/// 康奈尔盒 + 玻璃球场景
-pub fn cornell_box_with_glass_sphere(config: CornellBoxConfig) {
-    let (mut world, mut lights) = build_cornell_box_scene();
-
-    // 添加白色盒子
-    let white = Arc::new(Lambertian::new(Color::new(0.73, 0.73, 0.73)));
-    let box1 = box_new(
+    // Box 1 (Rotated & Translated)
+    let box1 = quad::box_new(
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(165.0, 330.0, 165.0),
-        white,
+        white_mat.clone(),
     );
-    let box1_rotated = Arc::new(RotateY::new(Arc::new(box1), 15.0));
-    let box1_translated = Arc::new(Translate::new(box1_rotated, Vec3::new(265.0, 0.0, 295.0)));
-    world.add(box1_translated);
+    let box1_rot = Arc::new(RotateY::new(Arc::new(box1), 15.0));
+    let box1_trans = Arc::new(Translate::new(box1_rot, Vec3::new(265.0, 0.0, 295.0)));
+    world.add(box1_trans);
 
-    // 添加玻璃球
+    // Glass Sphere
+    let glass_mat = Arc::new(Dielectric::new(1.5));
     let glass_sphere = Arc::new(Sphere::new(
         Point3::new(190.0, 90.0, 190.0),
         90.0,
-        Arc::new(Dielectric::new(1.5)),
+        glass_mat,
     ));
     world.add(glass_sphere.clone());
 
-    // 将玻璃球也加入光源列表（用于重要性采样）
-    lights.add(Arc::new(Sphere::new(
-        Point3::new(190.0, 90.0, 190.0),
-        90.0,
-        Arc::new(NoMaterial),
-    )));
+    // Add glass sphere to lights for importance sampling (Book 3 technique for caustics)
+    lights.add(glass_sphere);
 
-    // 配置相机
-    let mut camera = Camera::new();
-    camera.aspect_ratio = 1.0;
-    camera.image_width = config.image_width;
-    camera.samples_per_pixel = config.samples_per_pixel;
-    camera.max_depth = config.max_depth;
-    camera.background = Color::zeros(); // 黑色背景
+    // Camera Setup
+    let mut cam = Camera::new(image_width, 1.0);
+    cam.vfov = 40.0;
+    cam.lookfrom = Point3::new(278.0, 278.0, -800.0);
+    cam.lookat = Point3::new(278.0, 278.0, 0.0);
+    cam.vup = Vec3::new(0.0, 1.0, 0.0);
+    cam.defocus_angle = 0.0;
+    cam.samples_per_pixel = samples;
+    cam.max_depth = max_depth;
+    cam.background = Color::zeros();
 
-    camera.vfov = 40.0;
-    camera.lookfrom = Point3::new(278.0, 278.0, -800.0);
-    camera.lookat = Point3::new(278.0, 278.0, 0.0);
-    camera.vup = Vec3::new(0.0, 1.0, 0.0);
-    camera.defocus_angle = 0.0;
-    camera.output_filename = config.output_filename;
+    cam.initialize();
 
-    // 渲染
-    let start = Instant::now();
-    eprintln!("开始渲染康奈尔盒场景...");
-    eprintln!(
-        "图像大小: {}x{}, 采样数: {}, 反射深度: {}",
-        config.image_width, config.image_width, config.samples_per_pixel, config.max_depth
-    );
-
-    camera.render(&world, Some(Arc::new(lights)));
-
-    let duration = start.elapsed();
-    eprintln!("渲染完成！总耗时: {:?}", duration);
+    (Arc::new(world), Arc::new(lights), cam)
 }

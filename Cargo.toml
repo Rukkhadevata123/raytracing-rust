@@ -1,11 +1,11 @@
 [package]
-name = "ray_tracing_rust"
+name = "raytracing-rust"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rayon = "1"
-image = "0.25"
 rand = "0.9"
+nalgebra = "0.34"
+rayon = "1.11"
+image = "0.25"
 indicatif = "0.18"
-nalgebra = "0.33"

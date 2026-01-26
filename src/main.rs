@@ -1,48 +1,52 @@
-mod ray_tracing;
+mod core;
+mod geometry;
+mod integrators;
+mod materials;
+mod sampling;
 mod scenes;
+mod textures;
 
-use scenes::cornell_box::{CornellBoxConfig, cornell_box_with_glass_sphere};
-use scenes::final_scene::{FinalSceneConfig, final_scene_next_week};
+use crate::geometry::hittable::Hittable;
+use crate::integrators::integrator_trait::Integrator;
+use crate::integrators::path_tracer::PathTracer;
+use crate::scenes::{cornell_box, final_scene, many_balls};
 use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let scene_name = args.get(1).map(String::as_str).unwrap_or("many_balls");
 
-    // 根据命令行参数选择场景
-    match args.get(1).map(String::as_str) {
-        Some("cornell") => {
-            let config = CornellBoxConfig {
-                image_width: 600,
-                samples_per_pixel: 1000,
-                max_depth: 50,
-                output_filename: "cornell_box_glass.png".to_string(),
-            };
-            cornell_box_with_glass_sphere(config);
+    let (world, lights, camera) = match scene_name {
+        "many_balls" => {
+            println!("Loading Book 1 Final Scene (Random Spheres)...");
+            many_balls::build_many_balls(1200, 500, 50)
         }
-        Some("final") => {
-            let config = FinalSceneConfig {
-                image_width: 800,
-                samples_per_pixel: 5000,
-                max_depth: 75,
-                output_filename: "final_scene.png".to_string(),
-            };
-            final_scene_next_week(config);
+        "cornell_box" => {
+            println!("Loading Book 3 Cornell Box (Glass Sphere)...");
+            cornell_box::build_cornell_box(600, 100, 50)
         }
-        Some("quick") => {
-            // 快速测试版本
-            let config = FinalSceneConfig {
-                image_width: 400,
-                samples_per_pixel: 100,
-                max_depth: 20,
-                output_filename: "quick_test.png".to_string(),
-            };
-            final_scene_next_week(config);
+        "final_scene" => {
+            println!("Loading Book 2 Final Scene...");
+            // High resolution render settings from book
+            final_scene::build_final_scene(800, 1000, 50)
         }
         _ => {
-            eprintln!("用法: {} [cornell|final|texture|quick]", args[0]);
-            eprintln!("  cornell - 康奈尔盒子场景");
-            eprintln!("  final   - 最终复杂场景");
-            eprintln!("  quick   - 快速测试场景");
+            eprintln!(
+                "Unknown scene '{}'. Available: many_balls, cornell_box, final_scene",
+                scene_name
+            );
+            return;
         }
-    }
+    };
+
+    let filename = format!("{}.png", scene_name);
+    let integrator = PathTracer::new(&filename);
+
+    let lights_opt = if lights.objects.is_empty() {
+        None
+    } else {
+        Some(lights as std::sync::Arc<dyn Hittable>)
+    };
+
+    integrator.render(&*world, lights_opt, &camera);
 }

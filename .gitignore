@@ -1,4 +1,11 @@
 raytracing.github.io
 target
 .idea
+.github
 tinyrenderer
+legacy
+
+
+# Added by cargo
+
+/target
