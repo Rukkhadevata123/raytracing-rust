@@ -73,23 +73,75 @@ graph TD
     S --> T[Gamma Correction]
 ```
 
+## The Mathematics of Rendering
+
+Understanding the relationship between the physical rendering equation and the specific implementation in this project is crucial.
+
+### 1. The Standard Rendering Equation
+
+The standard rendering equation describes the outgoing radiance $L_o$ from a point $p$:
+
+$$ L_o(p, \omega_o) = L_e(p, \omega_o) + \int_{\Omega} f_r(p, \omega_i, \omega_o) \, L_i(p, \omega_i) \, (\omega_i \cdot n) \, d\omega_i $$
+
+To solve this integral using Monte Carlo estimation, we obtain the estimator:
+$$ \text{Color} = \text{Emission} + \frac{f_r(\omega_i, \omega_o) \cdot L_i(\omega_i) \cdot \cos\theta}{p(\omega_i)} $$
+
+### 2. The Implementation Equivalence
+
+In path_tracer.rs, you will see this calculation:
+
+```rust
+emission + srec.attenuation * sample_color * scattering_pdf / pdf_val
+```
+
+This implementation splits the standard BRDF term ($f_r \cdot \cos\theta$) into two distinct components. The mathematical equivalence is:
+
+$$ \underbrace{\text{Attenuation} \times \text{Scattering PDF}}_{\text{Code Implementation}} \equiv \underbrace{f_r(\omega_i, \omega_o) \times \cos\theta}_{\text{Standard Physics}} $$
+
+**Example: Lambertian (Diffuse) Material**
+
+- **Standard Physics**: $f_r = \frac{A}{\pi}$, so the numerator term is $\frac{A}{\pi} \cos\theta$.
+- **Code Implementation**:
+  - `attenuation` = $A$ (Albedo/Color)
+  - `scattering_pdf` = $\frac{\cos\theta}{\pi}$
+  - Product: $A \times \frac{\cos\theta}{\pi}$
+
+### 3. Why this decomposition?
+
+This specific split, popularized by Peter Shirley's book series, offers two significant advantages:
+
+1. **Intuitive Decoupling (Energy vs. Geometry)**:
+    It separates **"How much energy reflects?"** (`attenuation`/color) from **"Where does it reflect to?"** (`scattering_pdf`/shape). This makes implementing new materials more intuitive—you define the surface color and the geometric scattering shape separately.
+
+2. **Simplifying Importance Sampling**:
+    If we use a sampling strategy $p(\omega_i)$ that perfectly matches the material's physical scattering (Perfect Importance Sampling), then `pdf_val` becomes mathematically identical to `scattering_pdf`.
+
+    The equation simplifies beautifully:
+    $$ \text{Color} = \text{Attenuation} \cdot L_i \cdot \frac{\text{Scattering PDF}}{\text{Sampling PDF}} \Rightarrow \text{Attenuation} \cdot L_i $$
+
+    This makes the code logic clear: If we sample exactly where the material wants to scatter, the reflected color is simply the incident light multiplied by the material's albedo.
+
 ## Render Gallery
 
 ### 1. Random Spheres (Book 1 Final)
+
 A classic scene demonstrating motion blur, depth of field, and basic material types (Metal, Dielectric, Lambertian).
 !["Book 1 Final Scene"](./images/1.png)
 
 ### 2. Cornell Box with Glass Sphere (Book 3)
+
 A physically based lighting test featuring area lights, soft shadows, color bleeding, and caustics via glass refraction.
 !["Cornell Box"](./images/3.png)
 
 ### 3. The Final Scene (Book 2 Final)
+
 A complex scene combining all features: Perlin noise, image textures, volumetric fog, subsurface scattering, and thousands of motion-blurred spheres.
 !["Final Scene"](./images/2.png)
 
 ## Key Code Implementation
 
 ### The Path Tracer (`li` function)
+
 The core integrator loop handles emission, material scattering, and importance sampling.
 
 ```rust
@@ -143,6 +195,7 @@ fn li(&self, ray: &Ray, depth: u32, world: &dyn Hittable, lights: Option<&Arc<dy
 ```
 
 ### Probability Density Functions
+
 The system mixes sampling strategies (e.g., 50% chance to sample light, 50% chance to sample BRDF) to reduce noise.
 
 ```rust
@@ -165,6 +218,7 @@ impl PDF for MixturePDF {
 ## Quick Start
 
 ### Requirements
+
 - Rust 1.70+
 - Cargo
 
