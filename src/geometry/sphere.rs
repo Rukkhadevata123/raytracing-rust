@@ -106,6 +106,7 @@ impl Hittable for Sphere {
         }
     }
 
+    // Usually for lights
     fn pdf_value(&self, origin: &Point3, direction: &Vec3) -> f64 {
         // Importance sampling currently assumes static sphere for simplicity
         // or effectively samples at time=0. A full implementation would sample time.

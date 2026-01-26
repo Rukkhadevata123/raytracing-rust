@@ -1,5 +1,5 @@
 use crate::core::camera::Camera;
-use crate::core::vec3::{Color, Point3, Vec3, Vec3Ext}; // Vec3Ext needed for random_range
+use crate::core::vec3::{Color, Point3, Vec3, Vec3Ext};
 use crate::geometry::bvh::BvhNode;
 use crate::geometry::constant_medium::ConstantMedium;
 use crate::geometry::hittable_list::HittableList;

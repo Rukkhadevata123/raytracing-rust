@@ -40,9 +40,7 @@ pub fn build_cornell_box(
         Vec3::new(0.0, 555.0, 0.0),
         Vec3::new(-555.0, 0.0, 0.0),
         white_mat.clone(),
-    ))); // Back (Green side in C++ logic? No, check coords)
-    // C++: green(555,0,0) -> (0,0,555) -> (0,555,0).
-    // Rust Quads here match original implementation, assuming they form a box.
+    )));
     world.add(Arc::new(Quad::new(
         Point3::new(0.0, 0.0, 555.0),
         Vec3::new(0.0, 555.0, 0.0),
