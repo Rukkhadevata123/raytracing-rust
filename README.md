@@ -250,6 +250,25 @@ Performance metrics on an 8-core CPU. The refactored architecture maintains the 
 | Final Scene | 800×800 | 5000 | ~45 minutes |
 | Many Balls | 1200×675 | 500 | ~30 seconds |
 
+16-core example:
+
+```bash
+Loading Book 2 Final Scene...
+Rendering 1200x1200 image with 10000 SPP...
+  [04:30:02] [########################################] 1440000/1440000 (0s)                                           Render complete in 16202.70s
+Image saved to final_scene.png
+
+Loading Book 3 Cornell Box (Glass Sphere)...
+Rendering 1200x1200 image with 10000 SPP...
+  [02:44:19] [########################################] 1440000/1440000 (0s)                                           Render complete in 9859.83s
+Image saved to cornell_box.png
+
+Loading Book 1 Final Scene (Random Spheres)...
+Rendering 1200x675 image with 10000 SPP...
+  [01:34:36] [########################################] 810000/810000 (0s)                                             Render complete in 5676.01s
+Image saved to many_balls.png
+```
+
 ## References
 
 - [Ray Tracing in One Weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html)

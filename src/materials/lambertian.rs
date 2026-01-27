@@ -37,6 +37,11 @@ impl Material for Lambertian {
         // Normalize direction before dot product
         let cos_theta = scattered.dir.normalize().dot(&isect.geometry_normal);
 
-        if cos_theta < 0.0 { 0.0 } else { cos_theta / PI }
+        // Filter out grazing angles which cause instability in PDF division
+        if cos_theta < 1e-3 {
+            0.0
+        } else {
+            cos_theta / PI
+        }
     }
 }
